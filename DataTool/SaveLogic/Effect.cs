@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using DataTool.FindLogic;
 using DataTool.Helper;
 using OWLib;
 using OWLib.Types;
@@ -98,9 +97,15 @@ namespace DataTool.SaveLogic {
                     WriteTime(writer, neceInfo.PlaybackInfo);
                     writer.Write(neceInfo.GUID);
                     writer.Write(GUID.Index(neceInfo.Variable));
-                    FindLogic.Combo.EntityInfoNew entityInfo = info.Entities[neceInfo.GUID];
+
+                    if (!info.Entities.ContainsKey(neceInfo.GUID)) {
+                        // didn't account for encrypted content -_-
+                        writer.Write("null");
+                    } else {
+                        FindLogic.Combo.EntityInfoNew entityInfo = info.Entities[neceInfo.GUID];
                     
-                    writer.Write($"Entities\\{entityInfo.GetName()}\\{entityInfo.GetName()}.owentity");
+                        writer.Write($"Entities\\{entityInfo.GetName()}\\{entityInfo.GetName()}.owentity");
+                    }
                 }
                 
                 foreach (EffectParser.RPCEInfo rpceInfo in effect.RPCEs) {
@@ -197,6 +202,10 @@ namespace DataTool.SaveLogic {
                     writer.Write(animation.FPS);
                     writer.Write((int)OWAnimType.Reference);
 
+                    if (model == 0) {
+                        writer.Write("null");
+                        return;
+                    }
                     FindLogic.Combo.ModelInfoNew modelInfo = info.Models[model];
                     
                     writer.Write($"Models\\{modelInfo.GetName()}\\{Model.AnimationEffectDir}\\{animation.GetNameIndex()}\\{animation.GetNameIndex()}{Format}"); // so I can change it in DataTool and not go mad

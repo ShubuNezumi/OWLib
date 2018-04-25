@@ -18,6 +18,7 @@ using static DataTool.Helper.STUHelper;
 using static DataTool.Helper.IO;
 using static DataTool.Program;
 using Map = STULib.Types.Map.Map;
+using System.Threading.Tasks;
 
 namespace DataTool.FindLogic {
     public static class Combo {
@@ -44,6 +45,7 @@ namespace DataTool.FindLogic {
 
             public ComboConfig Config = new ComboConfig();
             public ComboSaveConfig SaveConfig = new ComboSaveConfig();
+            public ComboSaveRuntimeData SaveRuntimeData = null;
 
             public ComboInfo() {
                 Entities = new Dictionary<ulong, EntityInfoNew>();
@@ -88,6 +90,15 @@ namespace DataTool.FindLogic {
                     AnimationEffects[effect].Name = name.TrimEnd(' ');
                 }
             }
+
+            public void SetEffectVoiceSet(ulong effect, ulong voiceSet) {
+                if (AnimationEffects.ContainsKey(effect)) SetEffectVoiceSet(AnimationEffects[effect], voiceSet);
+                if (Effects.ContainsKey(effect)) SetEffectVoiceSet(Effects[effect], voiceSet);
+            }
+
+            public void SetEffectVoiceSet(EffectInfoCombo effect, ulong voiceSet) {
+                effect.Effect.VoiceSet = voiceSet;
+            }
         }
 
         public class ComboConfig {
@@ -99,6 +110,19 @@ namespace DataTool.FindLogic {
             public bool SaveAnimationEffects = true;
         }
         
+        public class ComboSaveRuntimeData {
+            public List<Task> Tasks;
+            public bool Threads;
+
+            public ComboSaveRuntimeData() {
+                if (Flags != null) {
+                    Threads = Flags.Threads;
+                }
+                
+                Tasks = new List<Task>();
+            }
+        }
+
         public class ComboType {
             public ulong GUID;
 
@@ -317,11 +341,47 @@ namespace DataTool.FindLogic {
         private static ulong GetMapDataKey(ulong map, ushort type) {
             return (GetMapDataRoot(map) & ~0xFFFF00000000ul) | ((ulong) type << 32);
         }
-       
+		
         public static ComboInfo Find(ComboInfo info, teResourceGUID guid, Dictionary<ulong, ulong> replacements=null , ComboContext context=null) {
             return Find(info, (ulong) guid, replacements, context);
         }
-        
+
+        public static bool RemoveDuplicateVoiceSetEntries(ComboInfo @base, ref ComboInfo target, ulong voiceSet, ulong targetVoiceSet) {
+            if (!@base.VoiceSets.ContainsKey(voiceSet) || !target.VoiceSets.ContainsKey(targetVoiceSet)) {
+                return false;
+            }
+
+            HashSet<ulong> keys = new HashSet<ulong>();
+            foreach (KeyValuePair<ulong, HashSet<VoiceLineInstanceInfo>> pair in @base.VoiceSets[voiceSet].VoiceLineInstances) {
+                foreach (VoiceLineInstanceInfo voice in pair.Value) {
+                    foreach (ulong guid in voice.SoundFiles) {
+                        keys.Add(guid);
+                    }
+                }
+            }
+
+            bool hasData = false;
+
+            // we have to call toarray here to "freeze" the GC stack and allow us to modify the "original" without C# bitching.
+            foreach (KeyValuePair<ulong, HashSet<VoiceLineInstanceInfo>> pair in @target.VoiceSets[targetVoiceSet].VoiceLineInstances.ToArray()) {
+                HashSet<VoiceLineInstanceInfo> newSet = new HashSet<VoiceLineInstanceInfo>();
+                foreach (VoiceLineInstanceInfo voice in pair.Value) {
+                    foreach (ulong guid in voice.SoundFiles.ToArray()) {  // and here
+                        if (!keys.Add(guid)) {
+                            voice.SoundFiles.Remove(guid);
+                        }
+                    }
+                    if (voice.SoundFiles.Count > 0) {
+                        newSet.Add(voice);
+                        hasData = true;
+                    }
+                }
+                @target.VoiceSets[targetVoiceSet].VoiceLineInstances[pair.Key] = newSet;
+            }
+
+            return hasData;
+        }
+
         public static ComboInfo Find(ComboInfo info, ulong guid, Dictionary<ulong, ulong> replacements=null , ComboContext context=null) {
             if (info == null) info = new ComboInfo();
             if (context == null) context = new ComboContext();
@@ -521,18 +581,40 @@ namespace DataTool.FindLogic {
                     
                     break;
                 case 0x4:
+                case 0xF1:
                     if (info.Textures.ContainsKey(guid)) break;
                     TextureInfoNew textureInfo = new TextureInfoNew(guid);
                     ulong dataKey = (guid & 0xF0FFFFFFFFUL) | 0x100000000UL | 0x0320000000000000UL;
+                    if (guidType == 0xF1)
+                    {
+                        for (ulong i = 0; i < 63; ++i)
+                        {
+                            if (Files.ContainsKey(dataKey | (i << 39)))
+                            {
+                                dataKey = dataKey | (i << 39);
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // sometimes a texture is too small to create mipmaps.
+                        ulong newDataKey = (guid & 0xF0FFFFFFFFUL) | 0x0320000000000000UL;
+                        if (!Files.ContainsKey(dataKey) && Files.ContainsKey(newDataKey))
+                        {
+                            dataKey = newDataKey;
+                        }
+                    }
                     bool useData = Files.ContainsKey(dataKey);
                     textureInfo.UseData = useData;
                     textureInfo.DataGUID = dataKey;
                     info.Textures[guid] = textureInfo;
 
-                    if (context.Material == 0) {
+                    if (context.Material == 0)
+                    {
                         textureInfo.Loose = true;
                     }
-                    
+
                     break;
                 case 0x6:
                     if (info.Animations.ContainsKey(guid)) {
@@ -736,6 +818,7 @@ namespace DataTool.FindLogic {
                     
                     STUAnimationListAnimationWrapper[] wrappers2 =
                         GetAllInstances<STUAnimationListAnimationWrapper>(guid);
+                    if (wrappers2 == null) break;
                     foreach (STUAnimationListAnimationWrapper animationWrapper in wrappers2) {
                         Find(info, animationWrapper?.Value, replacements, context);
                     }
@@ -866,12 +949,12 @@ namespace DataTool.FindLogic {
                                 GUIDx06F = voiceSet.VirtualGUIDs06F[i],
                                 GUIDx09B = voiceSet.VirtualGUIDs09B[i],
                                 GUIDx03C = voiceLineInstance.m_D0C28030,
-                                Subtitle = voiceLineInstance.Subtitle
+                                Subtitle = GetReplacement(voiceLineInstance.Subtitle, replacements)
                             };
                         if (voiceLineInstance.SoundDataContainer != null) {
-                            voiceLineInstanceInfo.GUIDx070 = voiceLineInstance.SoundDataContainer.GUIDx070;
-                            voiceLineInstanceInfo.VoiceStimulus = voiceLineInstance.SoundDataContainer.VoiceStimulus;
-                            voiceLineInstanceInfo.GUIDx02C = voiceLineInstance.SoundDataContainer.SoundbankMasterResource;
+                            voiceLineInstanceInfo.GUIDx070 = GetReplacement(voiceLineInstance.SoundDataContainer.GUIDx070, replacements);
+                            voiceLineInstanceInfo.VoiceStimulus = GetReplacement(voiceLineInstance.SoundDataContainer.VoiceStimulus, replacements);
+                            voiceLineInstanceInfo.GUIDx02C = GetReplacement(voiceLineInstance.SoundDataContainer.SoundbankMasterResource, replacements);
                             Find(info, voiceLineInstanceInfo.GUIDx02C, replacements, context);
                         } else {
                             Console.Out.WriteLine("[DataTool.FindLogic.Combo]: ERROR: voice data container was null (please contact the developers)");
@@ -888,7 +971,7 @@ namespace DataTool.FindLogic {
                                 voiceLineInstance.SoundContainer.Sound2, voiceLineInstance.SoundContainer.Sound3, 
                                 voiceLineInstance.SoundContainer.Sound4}) {
                                 if (soundWrapper == null) continue;
-                                voiceLineInstanceInfo.SoundFiles.Add(soundWrapper.SoundResource);
+                                voiceLineInstanceInfo.SoundFiles.Add(GetReplacement(soundWrapper.SoundResource, replacements));
                                 Find(info, soundWrapper.SoundResource, replacements, context);
                             }
                         }

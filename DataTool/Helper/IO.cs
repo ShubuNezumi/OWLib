@@ -30,14 +30,17 @@ namespace DataTool.Helper {
                 (current, reservedWordPattern) => Regex.Replace(current, reservedWordPattern, "_reservedWord_.",
                     RegexOptions.IgnoreCase));
         }
-        
+
         public static Dictionary<uint, Dictionary<uint, string>> GUIDTable = new Dictionary<uint, Dictionary<uint, string>>();
 
-        public static void LoadGUIDTable() {
+        public static void LoadGUIDTable()
+        {
             if (!File.Exists("GUIDNames.csv")) return;
             int i = 0;
-            foreach (string line in File.ReadAllLines("GUIDNames.csv")) {
-                if (i == 0) {
+            foreach (string line in File.ReadAllLines("GUIDNames.csv"))
+            {
+                if (i == 0)
+                {
                     i++;
                     continue;
                 }
@@ -49,11 +52,12 @@ namespace DataTool.Helper {
                 uint index = uint.Parse(indexString, NumberStyles.HexNumber);
                 uint type = uint.Parse(typeString, NumberStyles.HexNumber);
 
-                if (!GUIDTable.ContainsKey(type)) {
+                if (!GUIDTable.ContainsKey(type))
+                {
                     GUIDTable[type] = new Dictionary<uint, string>();
                 }
                 GUIDTable[type][index] = name;
-                
+
                 i++;
             }
         }
@@ -62,14 +66,17 @@ namespace DataTool.Helper {
             return teResourceGUID.AsString(guid);
         }
 
-        public static void WriteFile(Stream stream, string filename) {
+        public static void WriteFile(Stream stream, string filename)
+        {
             if (stream == null) return;
             string path = Path.GetDirectoryName(filename);
-            if (!Directory.Exists(path) && path != null) {
+            if (!Directory.Exists(path) && path != null)
+            {
                 Directory.CreateDirectory(path);
             }
 
-            using (Stream file = File.OpenWrite(filename)) {
+            using (Stream file = File.OpenWrite(filename))
+            {
                 file.SetLength(0); // ensure no leftover data
                 stream.CopyTo(file);
             }
@@ -86,14 +93,16 @@ namespace DataTool.Helper {
 
             // string filename = GUIDTable.ContainsKey(guid) ? GUIDTable[guid] : GetFileName(guid);
             string filename = GetFileName(guid);
-            
+
             WriteFile(stream, Path.Combine(path, filename));
-            
-            if (!Directory.Exists(path)) {
+
+            if (!Directory.Exists(path))
+            {
                 Directory.CreateDirectory(path);
             }
 
-            using (Stream file = File.OpenWrite(Path.Combine(path, filename))) {
+            using (Stream file = File.OpenWrite(Path.Combine(path, filename)))
+            {
                 stream.CopyTo(file);
             }
         }
@@ -133,7 +142,7 @@ namespace DataTool.Helper {
                 return null;
             }
         }
-        
+		
         public static Stream OpenFileUnsafe(ApplicationPackageManifest.Types.PackageRecord record, out ulong salsa) {
             salsa = 0;
             if (!CASC.EncodingHandler.GetEntry(record.LoadHash, out EncodingEntry enc)) return null;
@@ -148,22 +157,27 @@ namespace DataTool.Helper {
             try {
                 return OpenFile(Files[guid]);
             }
-            catch {
+            catch
+            {
                 return null;
             }
         }
 
-        public static void CreateDirectoryFromFile(string path) {
+        public static void CreateDirectoryFromFile(string path)
+        {
             string dir = Path.GetDirectoryName(path);
-            if (string.IsNullOrWhiteSpace(dir)) {
+            if (string.IsNullOrWhiteSpace(dir))
+            {
                 return;
             }
-            if (!Directory.Exists(dir)) {
+            if (!Directory.Exists(dir))
+            {
                 Directory.CreateDirectory(dir);
             }
         }
 
-        public static string GetString(ulong guid) {
+        public static string GetString(ulong guid)
+        {
             if (guid == 0) return null;  // don't even try
             try {
                 using (Stream stream = OpenFile(Files[guid])) {

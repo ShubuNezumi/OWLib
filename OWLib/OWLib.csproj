@@ -50,6 +50,7 @@
   <ItemGroup>
     <Compile Include="Animation.cs" />
     <Compile Include="STUD.cs" />
+    <Compile Include="LUT.cs" />
     <Compile Include="Third Party\APPLIB\C3D.cs" />
     <Compile Include="DDSTypeDetect.cs" />
     <Compile Include="Extensions.cs" />

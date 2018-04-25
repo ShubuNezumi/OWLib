@@ -14,11 +14,13 @@ using OWLib;
 using STULib;
 using STULib.Impl;
 using STULib.Impl.Version2HashComparer;
+using static CASCLib.ApplicationPackageManifest.Types;
 using Console = System.Console;
 using InstanceData = STULib.Impl.Version2HashComparer.InstanceData;
 using Version2 = STULib.Impl.Version2;
 
-namespace STUHashTool {
+namespace STUHashTool
+{
     public class InstanceTally {
         public uint Count;
         public Dictionary<uint, uint> FieldOccurrences;
@@ -681,7 +683,7 @@ namespace STUHashTool {
 #if false
                 ushort fileShort = ushort.Parse(testFileType, NumberStyles.HexNumber);
                     
-                Dictionary<ulong, Record> records = new Dictionary<ulong, Record>();
+                Dictionary<ulong, PackageRecord> records = new Dictionary<ulong, PackageRecord>();
                 Dictionary<ushort, List<ulong>> track = new Dictionary<ushort, List<ulong>> {
                     [fileShort] = new List<ulong>()
                 };
@@ -693,7 +695,7 @@ namespace STUHashTool {
                 Util.MapCMF(root, handler, records, track, "enUS");
                 foreach (ulong file in track[fileShort]) {
                     if (!records.ContainsKey(file)) {
-                        Debugger.Log(0, "STUHashTool:test", $"Unable to open file: {file:X} ({GUID.LongKey(file):X12}.{GUID.Type(file):X3})\n");
+                        Debugger.Log(0, "STUHashTool:test", $"Unable to open file: {file:X} ({GUID.AsString(file)})\n");
                         continue;
                     }
                     //if (file != 288230376151714901 && file != 288230376151712128) continue;

@@ -15,12 +15,16 @@ namespace OWLib {
         };
 
         #region Helpers
+        public static string AsString(ulong key) {
+            return $"{LongKey(key):X12}.{Type(key):X3}";
+        }
+
         public static ulong Attribute(ulong key, AttributeEnum flags) {
             return key & (ulong)flags;
         }
 
         public static ulong LongKey(ulong key) {
-            return Attribute(key, AttributeEnum.Index | AttributeEnum.Locale | AttributeEnum.Region | AttributeEnum.Platform);
+            return Attribute(key, (AttributeEnum)0xFFFFFFFFFFFFUL);
         }
 
         public static uint Index(ulong key) {
@@ -62,6 +66,7 @@ namespace OWLib {
         #endregion
 
         public static void DumpAttributes(TextWriter @out, ulong key) {
+            @out.WriteLine($"{AsString(key)}");
             @out.WriteLine($"Index:    {Index(key):X4}");
             @out.WriteLine($"Locale:   {Locale(key):X1}");
             @out.WriteLine($"Region:   {Region(key):X1}");

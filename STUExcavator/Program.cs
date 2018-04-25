@@ -105,9 +105,10 @@ namespace STUExcavator {
             FieldNames = new Dictionary<uint, string>();
             EnumNames = new Dictionary<uint, string>();
             InstanceNames = new Dictionary<uint, string>();
-            
+
             JsonConvert.DefaultSettings = () => new JsonSerializerSettings {
-                Converters = new List<JsonConverter> {new GUIDArrayConverter(), new GUIDConverter()}
+                Converters = new List<JsonConverter> { new GUIDArrayConverter(), new GUIDConverter() },
+                PreserveReferencesHandling = PreserveReferencesHandling.All
             };
             
             // wipe ISTU
@@ -302,9 +303,9 @@ namespace STUExcavator {
                                     if (i != 0) sb.AppendLine();
                                     sb.AppendLine($"{attr.Checksum:X8}:");
                                     sb.AppendLine(JsonConvert.SerializeObject(stuInstance, Formatting.Indented));
-                                    asset.JSONDump += sb.ToString();
                                     i++;
                                 }
+                                asset.JSONDump = sb.ToString();
                             }
                         }
                     }

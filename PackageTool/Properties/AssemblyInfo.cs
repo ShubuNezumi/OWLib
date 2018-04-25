@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("STU2JSON")]
+[assembly: AssemblyTitle("PackageTool")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("STU2JSON")]
+[assembly: AssemblyProduct("PackageTool")]
 [assembly: AssemblyCopyright("Copyright ©  2018")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -20,7 +20,7 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 
 // The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("a1843bb2-a6da-47b0-a811-b4967cf5fb4c")]
+[assembly: Guid("0dedcb95-39c9-4fa4-85e8-ab58a8c75e3c")]
 
 // Version information for an assembly consists of the following four values:
 //

@@ -110,8 +110,13 @@ namespace DataTool.SaveLogic {
                         for (int j = 0; j < obj.Header.groupCount; ++j) {
                             Map01.Map01Group group = obj.Groups[j];
                             FindLogic.Combo.Find(info, group.ModelLook, null, new FindLogic.Combo.ComboContext {Model = obj.Header.Model});
-                            FindLogic.Combo.ModelLookInfo modelLookInfo = info.ModelLooks[group.ModelLook];
-                            string materialFn = $"Models\\{modelInfo.GetName()}\\ModelLooks\\{modelLookInfo.GetNameIndex()}.owmat";
+                            string materialFn;
+                            if (!info.ModelLooks.ContainsKey(group.ModelLook)) {
+                                materialFn = ""; // encrypted
+                            } else {
+                                FindLogic.Combo.ModelLookInfo modelLookInfo = info.ModelLooks[group.ModelLook];
+                                materialFn = $"Models\\{modelInfo.GetName()}\\ModelLooks\\{modelLookInfo.GetNameIndex()}.owmat";
+                            }    
                             
                             writer.Write(materialFn);
                             writer.Write(group.recordCount);
@@ -228,9 +233,12 @@ namespace DataTool.SaveLogic {
                         FindLogic.Combo.Find(info, modelLook, null, new FindLogic.Combo.ComboContext {Model = mapEntity.Model});
 
                         FindLogic.Combo.ModelInfoNew modelInfo = info.Models[mapEntity.Model];
-                        FindLogic.Combo.ModelLookInfo modelLookInfo = info.ModelLooks[modelLook]; 
+                        string matFn = "";
+                        if (info.ModelLooks.ContainsKey(modelLook)) {
+                            FindLogic.Combo.ModelLookInfo modelLookInfo = info.ModelLooks[modelLook];
+                            matFn = $"Models\\{modelInfo.GetName()}\\ModelLooks\\{modelLookInfo.GetNameIndex()}.owmat";
+                        }
                         string modelFn = $"Models\\{modelInfo.GetName()}\\{modelInfo.GetNameIndex()}{modelFormat.Format}";
-                        string matFn = $"Models\\{modelInfo.GetName()}\\ModelLooks\\{modelLookInfo.GetNameIndex()}.owmat";
                         
                         writer.Write(modelFn);
                         writer.Write(matFn);
@@ -343,9 +351,19 @@ namespace DataTool.SaveLogic {
             FindLogic.Combo.ComboInfo info = new FindLogic.Combo.ComboInfo();
             LoudLog("\tFinding");
             FindLogic.Combo.Find(info, map.MapDataResource1);
+
+            MapEnvironment? env = null;
+            using (Stream data = OpenFile(map.MapDataResource1)) {
+                if (data != null) {
+                    using (BinaryReader dataReader = new BinaryReader(data)) {
+                        env = dataReader.Read<MapEnvironment>();
+                    }
+                }
+            }
             
             using (Stream mapStream = OpenFile(map.GetDataKey(1))) {
                 STULib.Types.Map.Map mapData = new STULib.Types.Map.Map(mapStream, BuildVersion);
+
                 using (Stream map2Stream = OpenFile(map.GetDataKey(2))) {
                     if (map2Stream == null) return;
                     STULib.Types.Map.Map map2Data = new STULib.Types.Map.Map(map2Stream, BuildVersion);
@@ -386,35 +404,36 @@ namespace DataTool.SaveLogic {
                     }
                 }
             }
-
+            
             FindLogic.Combo.Find(info, map.EffectAnnouncer);
             info.SetEffectName(map.EffectAnnouncer, "LoadAnnouncer");
             FindLogic.Combo.Find(info, map.EffectMusic);
             info.SetEffectName(map.EffectMusic, "LoadMusic");
+  
+            if (map.VoiceSet != null) {
+                FindLogic.Combo.Find(info, map.VoiceSet);
+            }
+
+            if (env != null) {
+                FindLogic.Combo.Find(info, env.Value.EntityDefinition);
+                STUVoiceSetComponent voiceSetComponent = GetInstance<STUVoiceSetComponent>(env.Value.EntityDefinition);
+                if (voiceSetComponent != null) {
+                    FindLogic.Combo.Find(info, voiceSetComponent.VoiceSet);
+                    info.SetEffectVoiceSet(map.EffectAnnouncer, voiceSetComponent.VoiceSet);
+                    info.SetEffectVoiceSet(map.EffectMusic, voiceSetComponent.VoiceSet);
+                }
+            }
             
             LoudLog("\tSaving");
             Combo.Save(flags, mapPath, info);
             
-            // if (extractFlags.ConvertModels) {
-            //     string physicsFile = Path.Combine(mapPath, "Models", "physics", "physics.owmdl");
-            //     // CreateDirectoryFromFile(physicsFile);
-            //     // using (Stream map10Stream = OpenFile(map.GetDataKey(0x10))) {
-            //     //     Map10 physics = new Map10(map10Stream);
-            //     //     using (Stream outputStream = File.Open(physicsFile, FileMode.Create, FileAccess.Write)) {
-            //     //         modelWriter.Write(physics, outputStream, new object[0]);
-            //     //     }
-            //     // }
-            // }
+            string soundPath = Path.Combine(mapPath, "Sound");
+            string voiceSetsPath = Path.Combine(soundPath, "VoiceSets");
+            string otherSoundsPath = Path.Combine(soundPath, "SFX");
 
-            if (map.VoiceSet != null) {
-                FindLogic.Combo.ComboInfo soundInfo = new FindLogic.Combo.ComboInfo();
-                FindLogic.Combo.Find(soundInfo, map.VoiceSet);
-
-                if (soundInfo.VoiceSets.ContainsKey(map.VoiceSet)) {
-                    string soundPath = Path.Combine(mapPath, "Sound");
-                    FindLogic.Combo.VoiceSetInfo voiceSetInfo = soundInfo.VoiceSets[map.VoiceSet];
-                    Combo.SaveVoiceSet(flags, soundPath, soundInfo, voiceSetInfo);
-                }
+            Combo.SaveVoiceSets(flags, voiceSetsPath, info);
+            foreach (KeyValuePair<ulong, FindLogic.Combo.SoundFileInfo> sound in info.SoundFiles) {
+                Combo.SaveSoundFile(flags, otherSoundsPath, info, sound.Key, false);
             }
             
             LoudLog("\tDone");

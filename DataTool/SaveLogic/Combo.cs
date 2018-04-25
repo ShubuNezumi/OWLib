@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using BCFF;
 using DataTool.ConvertLogic;
 using DataTool.Flag;
@@ -87,6 +88,7 @@ namespace DataTool.SaveLogic {
                     seAnim.Write(fileStream);
                 }
             } else {
+                animStream.Position = 0;
                 string rawAnimOutput = Path.Combine(animationDirectory,
                     $"{animationInfo.GetNameIndex()}.{GUID.Type(animationInfo.GUID):X3}");
                 CreateDirectoryFromFile(rawAnimOutput);
@@ -334,6 +336,7 @@ namespace DataTool.SaveLogic {
 
         public static void SaveMaterial(ICLIFlags flags, string path, FindLogic.Combo.ComboInfo info, ulong material) {
             FindLogic.Combo.MaterialInfo materialInfo = info.Materials[material];
+            if (!info.MaterialDatas.ContainsKey(materialInfo.MaterialData)) return;  // heckin encryted content
             FindLogic.Combo.MaterialDataInfo materialDataInfo = info.MaterialDatas[materialInfo.MaterialData];
 
             Model.OWMatWriter14 materialWriter = new Model.OWMatWriter14();
@@ -341,8 +344,17 @@ namespace DataTool.SaveLogic {
             string textureDirectory = Path.Combine(path, "Textures");
             
             SaveOWMaterialFile(path, materialInfo, materialWriter, info);
+			
+            if (info.SaveRuntimeData.Threads) {
+                info.SaveRuntimeData.Tasks.Add(Task.Run(() => {
+                    SaveOWMaterialFile(path, materialInfo, materialWriter, info);
+                }));
+            } else {
+                SaveOWMaterialFile(path, materialInfo, materialWriter, info);
+            }
 
             foreach (KeyValuePair<ulong, teShaderTextureType> texture in materialDataInfo.Textures) {
+                if (!info.Textures.ContainsKey(texture.Key)) continue;
                 SaveTexture(flags, textureDirectory, info, texture.Key);
             }
         }
@@ -401,6 +413,12 @@ namespace DataTool.SaveLogic {
             }
             info.SaveConfig.SaveAnimationEffects = beforeSaveAnimEffects;
         }
+
+        public static void SaveVoiceSets(ICLIFlags flags, string path, FindLogic.Combo.ComboInfo info) {
+            foreach (KeyValuePair<ulong,FindLogic.Combo.VoiceSetInfo> voiceSet in info.VoiceSets) {
+                SaveVoiceSet(flags, path, info, voiceSet.Value);
+            }
+        }
         
         public static void SaveVoiceSet(ICLIFlags flags, string path, FindLogic.Combo.ComboInfo info, 
             ulong voiceSet) {
@@ -438,7 +456,7 @@ namespace DataTool.SaveLogic {
             internal static readonly int[] DXGI_BC5 = { 82, 83, 84 };
         }
         
-        private static void ConvertTexture(string convertType, string filePath, string path, Stream headerStream, Stream dataStream) {
+        private static void ConvertTexture(string convertType, bool lossless, string filePath, string path, Stream headerStream, Stream dataStream) {
             CreateDirectoryFromFile(path);
 
             teTexture texture = new teTexture(headerStream);
@@ -451,73 +469,75 @@ namespace DataTool.SaveLogic {
                 texture.SetPayload(payload);
             }
 
-            Stream convertedStream = texture.SaveToDDS();
-            
-            uint fourCC = texture.Header.GetFormat().ToPixelFormat().FourCC;
-            bool isBcffValid = TextureConfig.DXGI_BC4.Contains((int) texture.Header.Format) ||
-                               TextureConfig.DXGI_BC5.Contains((int) texture.Header.Format) ||
-                               fourCC == TextureConfig.FOURCC_ATI1 || fourCC == TextureConfig.FOURCC_ATI2;
+            using (Stream convertedStream = texture.SaveToDDS()) {
+                uint fourCC = texture.Header.ToDDSHeader().Format.FourCC;
+                bool isBcffValid = TextureConfig.DXGI_BC4.Contains((int)texture.Header.Format) ||
+                                   TextureConfig.DXGI_BC5.Contains((int)texture.Header.Format) ||
+                                   fourCC == TextureConfig.FOURCC_ATI1 || fourCC == TextureConfig.FOURCC_ATI2;
 
-            ImageFormat imageFormat = null;
+                // if (convertType == "tga") imageFormat = Im.... oh
+                // so there is no TGA image format.
+                // guess the TGA users are stuck with the DirectXTex stuff for now.
 
-            if (convertType == "tif") imageFormat = ImageFormat.Tiff;
+                convertedStream.Position = 0;
+                if (convertType == "dds" || convertedStream.Length == 0) {
+                    WriteFile(convertedStream, $"{filePath}.{convertType}");
+                    return;
+                }
 
-            // if (convertType == "tga") imageFormat = Im.... oh
-            // so there is no TGA image format.
-            // guess the TGA users are stuck with the DirectXTex stuff for now.
-            
-            if (convertedStream.Length == 0) {
-                WriteFile(Stream.Null, $"{filePath}.{convertType}");
-                return;
-            }
+                ImageFormat imageFormat = null;
+                if (convertType == "tif") imageFormat = ImageFormat.Tiff;
+                if (convertType == "png") imageFormat = ImageFormat.Png;
 
-            convertedStream.Position = 0;
-            if (isBcffValid && imageFormat != null) {
-                BlockDecompressor decompressor = new BlockDecompressor(convertedStream);
-                decompressor.CreateImage();
-                decompressor.Image.Save($"{filePath}.{convertType}", imageFormat);
-                return;
-            }
+                if (isBcffValid && imageFormat != null) {
+                    BlockDecompressor decompressor = new BlockDecompressor(convertedStream);
+                    decompressor.CreateImage();
+                    decompressor.Image.Save($"{filePath}.{convertType}", imageFormat);
+                    return;
+                }
 
-            convertedStream.Position = 0;
-            if (convertType == "tga" || convertType == "tif" || convertType == "dds") {
-                // we need the dds for tif conversion
-                WriteFile(convertedStream, $"{filePath}.dds");
-            }
+                string losslessFlag = lossless ? "-wiclossless" : string.Empty;
 
-            convertedStream.Close();
-
-            if (convertType != "tif" && convertType != "tga") return;
-            Process pProcess = new Process {
-                StartInfo = {
+                Process pProcess = new Process {
+                    StartInfo = {
                     FileName = "Third Party\\texconv.exe",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
+                    RedirectStandardInput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
                     Arguments =
-                        $"\"{filePath}.dds\" -y -wicmulti -nologo -m 1 -ft {convertType} -f R8G8B8A8_UNORM -o \"{path}"
+                        $"-- \"{Path.GetFileName(filePath)}.dds\" -y -wicmulti {losslessFlag} -nologo -m 1 -ft {convertType} -f R8G8B8A8_UNORM -o \"{path}"
                 }
-            };
-            // -wiclossless?
+                };
+                pProcess.EnableRaisingEvents = true;
 
-            // erm, so if you add an end quote to this then it breaks.
-            // but start one on it's own is fine (we need something for "Winged Victory")
-            pProcess.Start();
-            // pProcess.WaitForExit(); // not using this is kinda dangerous but I don't care
-            // when texconv writes with to the console -nologo is has done/failed conversion
-            string line = pProcess.StandardOutput.ReadLine();
-            if (line?.Contains($"{filePath}.dds FAILED") == false) {
-                // fallback if convert fails
-                File.Delete($"{filePath}.dds");
+                // erm, so if you add an end quote to this then it breaks.
+                // but start one on it's own is fine (we need something for "Winged Victory")
+                pProcess.Start();
+                convertedStream.Position = 0;
+                convertedStream.CopyTo(pProcess.StandardInput.BaseStream);
+                pProcess.StandardInput.BaseStream.Close();
+
+                // pProcess.WaitForExit(); // not using this is kinda dangerous but I don't care
+                // when texconv writes with to the console -nologo is has done/failed conversion
+                string line = pProcess.StandardOutput.ReadLine();
+                if (line?.Contains("FAILED") == true) {
+                    convertedStream.Position = 0;
+                    WriteFile(convertedStream, $"{filePath}.dds");
+                }
             }
         }
 
         public static void SaveTexture(ICLIFlags flags, string path, FindLogic.Combo.ComboInfo info, ulong texture) {
             bool convertTextures = true;
+            bool lossless = false;
             string convertType = "dds";
 
             if (flags is ExtractFlags extractFlags) {
                 convertTextures = extractFlags.ConvertTextures  && !extractFlags.Raw;
                 convertType = extractFlags.ConvertTexturesType.ToLowerInvariant();
+                lossless = extractFlags.ConvertTexturesLossless;
                 if (extractFlags.SkipTextures) return;
             }
             path += Path.DirectorySeparatorChar;
@@ -528,7 +548,7 @@ namespace DataTool.SaveLogic {
             if (!convertTextures) {
                 CreateDirectoryFromFile(path);
                 using (Stream textureStream = OpenFile(textureInfo.GUID))
-                    WriteFile(textureStream, $"{filePath}.004");
+                    WriteFile(textureStream, $"{filePath}.{GUID.Type(textureInfo.GUID):X3}");
 
                 if (!textureInfo.UseData) return;
                 using (Stream textureStream = OpenFile(textureInfo.DataGUID))
@@ -541,7 +561,14 @@ namespace DataTool.SaveLogic {
                     dataStream = OpenFile(textureInfo.DataGUID);
                     if (dataStream == null) return;
                 }
-                ConvertTexture(convertType, filePath, path, headerStream, dataStream);
+
+                if (info.SaveRuntimeData.Threads) {
+                    info.SaveRuntimeData.Tasks.Add(Task.Run(() =>{
+                        ConvertTexture(convertType, lossless, filePath, path, headerStream, dataStream);
+                    }));
+                } else {
+                    ConvertTexture(convertType, lossless, filePath, path, headerStream, dataStream);
+                }
             }
         }
 

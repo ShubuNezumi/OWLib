@@ -54,6 +54,9 @@ namespace DataTool {
         [CLIFlag(Flag = "ignore-guid", Help = "Ignore these GUIDs", Parser = new[] { "DataTool.Flag.Converter", "CLIFlagGUIDArray" })]
         public List<ulong> IgnoreGUIDs;
 
+        [CLIFlag(Default = false, Flag = "threads", Help = "Use multiple threads", Parser = new[] { "DataTool.Flag.Converter", "CLIFlagBoolean" })]
+        public bool Threads;
+
         public override bool Validate() => true;
     }
 }
